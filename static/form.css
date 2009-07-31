@@ -1,0 +1,44 @@
+form .label {
+    margin:5px;
+    text-transform:uppercase;
+    color:#666;
+    letter-spacing:0.1em;
+    font-size:smaller;
+}
+form .field {
+    margin:5px;
+}
+form input {
+    font-family:Calibri,sans-serif;
+    font-size:1em;
+}
+form .field input, form .field textarea {
+    width:600px;
+}
+form .field input[type="submit"],
+form .field input[type="checkbox"],
+form .field input[type="button"] {
+    width:auto;
+}
+form dd {
+    padding-bottom:1em;
+}
+form .help {
+    color:#aaa;
+}
+form .error, form .required {
+    color:#c33;
+}
+
+form .help, form .error {
+    margin:5px;
+}
+
+form input {
+    font-family:sans-serif;
+}
+form textarea {
+    width:600px;
+    height:200px;
+}
+

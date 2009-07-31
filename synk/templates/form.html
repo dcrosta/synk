@@ -1,0 +1,21 @@
+<form action="{{form_action}}" method="post">
+  <dl>
+    {% for field in form %}{% if not field.is_hidden %}
+    <dt class="label field_{{field.name}}">{{field.label_tag}}{% if field.field.required %} <span class="required">*</span>{% endif %}</dt>
+      {% if field.help_text %}
+      <dd class="help field_{{field.name}}">{{field.help_text}}</dd>
+      {% endif %}
+      <dd class="field field_{{field.name}}"><span id="pre_{{field.name}}"></span>{{field}}</dd>
+      {% for error in field.errors %}
+        <dd class="error field_{{field.name}}">{{error}}</dd>
+      {% endfor %}
+    {% endif %}{% endfor %}
+  </dl>
+  <input type="submit" name="save" value="{{submit_button|default:"Save"}}"/>
+  {% for field in form %}
+    {% if field.is_hidden %}
+      {{ field }}
+    {% endif %}
+  {% endfor %}
+</form>
+
