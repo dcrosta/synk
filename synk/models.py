@@ -1,31 +1,22 @@
-import sha
+import md5
 import random
 
 from google.appengine.ext import db
 
 __all__ = ['User', 'Group', 'Status']
 
-letters = [l for l in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234567890']
-
-def make_salt(length=32):
-    salt = []
-    for i in range(length):
-        salt.append(random.choice(letters))
-    return ''.join(salt)
-
 class User(db.Model):
     username = db.StringProperty()
     password_hash = db.StringProperty()
-    password_salt = db.StringProperty()
+
+    # pretend to be a property
+    realm = 'Synk'
 
     def set_password(self, password):
-        self.password_salt = make_salt()
-        salted_password = self.password_salt + password
-        self.password_hash = sha.new(salted_password).hexdigest()
-
-    def authenticate(self, password):
-        salted_password = self.password_salt + password
-        return self.password_hash == sha.new(salted_password).hexdigest()
+        # HTTP digest user-realm-pass hash
+        a1 = '%s:%s:%s' % (self.username, self.realm, password)
+        ha1 = md5.new(a1)
+        self.password_hash = ha1.hexdigest()
 
     @staticmethod
     def by_username(username):
@@ -43,17 +34,33 @@ class Group(db.Model):
     # unique identifier of this Group,
     # usually a hash or GUID
     id = db.StringProperty()
+    name = db.StringProperty()
 
     def put(self):
-        chars = set([l for l in self.id])
-        if len(chars - Group.VALID_ID_CHARS) > 0:
-            raise Exception('invalid group id')
+        if self.id is None:
+            self.id = Group.id_for_name(self.name)
         db.Model.put(self)
+
+    @staticmethod
+    def id_for_name(name):
+        return md5.new(name).hexdigest()
 
     @staticmethod
     def for_user(user):
         groups = db.GqlQuery('select * from Group where user = :1', user)
         return groups
+
+    @staticmethod
+    def by_id(user, group_id):
+        try:
+            group = db.GqlQuery('select * from Group where id = :1 and user = :2', group_id, user)[0]
+            return group
+        except IndexError:
+            return None
+
+    def to_dict(self):
+        return {'id': self.id, 'name': self.name}
+
 
 
 class Status(db.Model):
