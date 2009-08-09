@@ -6,9 +6,10 @@ __all__ = ['UserForm']
 
 letters = set([l for l in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz01234567890_.'])
 
+
 class UserForm(forms.Form):
     username = forms.CharField(min_length=3, max_length=255)
-    password = forms.CharField(min_length=6, max_length=255, widget=forms.PasswordInput)
+    password = forms.CharField(min_length=6, widget=forms.PasswordInput)
 
     def clean_username(self):
         username = self.clean_data['username']
