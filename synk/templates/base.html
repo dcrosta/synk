@@ -1,17 +1,99 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<html>
-    <head>
-        <title>{% block title %}Synk{% endblock %}</title>
-        <link rel="stylesheet" href="/static/synk.css"/>
-        {% block styles %}{% endblock %}
-        {% comment %}
-        <script type="text/javascript" src="/static/jquery.js"></script>
-        <script type="text/javascript" src="/static/search.js"></script>
-        {% endcomment %}
-        {% block scripts %}{% endblock %}
-    </head>
-    <body>
-        {% block body %}{% endblock %}
-    </body>
-</html>
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head profile="http://gmpg.org/xfn/11">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>{% block title %}Synk{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css"/>
 
+    <!--[if lte IE 6]>
+    <style type="text/css" media="screen">
+      @import "http://wp-themes.com/wp-content/themes/arclite/ie6.css";
+    </style>
+    <![endif]-->
+
+    {% block styles %}{% endblock %}
+    {% block scripts %}{% endblock %}
+
+  </head>
+  <body class="home">
+    <!-- page wrap -->
+    <div id="page" class="with-sidebar">
+
+      <!-- header -->
+      <div id="header-wrap">
+        <div id="header" class="block-content">
+          <div id="pagetitle">
+            <h1 class="logo">Synk</h1>
+            <h4>Really Simple Synchronizaton</h4>
+            <div class="clear"></div>
+          </div>
+
+          <!-- main navigation -->
+          <div id="nav-wrap1">
+            <div id="nav-wrap2">
+              <ul id="nav">
+                <li class="page_item"><a class="fadeThis" href="/" title="Synk"><span>Home</span></a></li>
+                <!--<li class="page_item"><a class="fadeThis" href="/about" title="About"><span>About Synk</span></a></li>-->
+                <li class="page_item"><a class="fadeThis" href="/register" title="About"><span>Register</span></a></li>
+                <li class="page_item"><a class="fadeThis" href="/dev" title="Parent Page"><span>Development</span></a></li>
+              </ul>
+            </div>
+          </div>
+          <!-- /main navigation -->
+
+        </div>
+      </div>
+      <!-- /header -->
+
+      <!-- main wrappers -->
+      <div id="main-wrap1">
+        <div id="main-wrap2">
+
+          <!-- main page block -->
+          <div id="main" class="block-content">
+            <div class="mask-main rightdiv">
+              <div class="mask-left">
+
+                <!-- first column -->
+                <div class="col1">
+                  <div id="main-content">
+
+
+                    <!-- post -->
+                    <div class="post hentry category-uncategorized tag-boat tag-lake">
+                        {% block body %}{% endblock %}
+
+                    </div>
+                    <!-- /post -->
+                  </div>
+                </div>
+                <!-- /first column -->
+              </div>
+            </div>
+            <div class="clear-content"></div>
+          </div>
+          <!-- /main page block -->
+        </div>
+      </div>
+      <!-- /main wrappers -->
+
+      <!-- footer -->
+      <div id="footer">
+        <!-- page block -->
+        <div class="block-content">
+          <div class="copyright">
+            <p>
+            <!-- please do not remove this. respect the authors :) -->
+            Adapted from Arclite theme by <a href="http://digitalnature.ro/projects/arclite">digitalnature</a> for <a href="http://wordpress.org/">WordPress</a></p>
+          </div>
+        </div>
+        <!-- /page block -->
+      </div>
+      <!-- /footer -->
+    </div>
+    <!-- /page -->
+  </body>
+</html>
+{%comment%}
+vim:ts=2 sts=2 sw=2 expandtab
+{%endcomment%}

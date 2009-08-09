@@ -1,7 +1,7 @@
 <form action="{{form_action}}" method="post">
   <dl>
     {% for field in form %}{% if not field.is_hidden %}
-    <dt class="label field_{{field.name}}">{{field.label_tag}}{% if field.field.required %} <span class="required">*</span>{% endif %}</dt>
+    <dt class="label field_{{field.name}}">{{field.label_tag}}</dt>
       {% if field.help_text %}
       <dd class="help field_{{field.name}}">{{field.help_text}}</dd>
       {% endif %}
