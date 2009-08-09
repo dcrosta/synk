@@ -109,7 +109,7 @@ def validate_schema(jsonobj):
 # HTML VIEW METHODS
 
 def index(request):
-    return render(request, 'hello.html')
+    return render(request, 'index.html')
 
 def register(request):
     form = UserForm()
