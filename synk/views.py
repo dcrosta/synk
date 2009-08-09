@@ -1,3 +1,5 @@
+import types
+
 import simplejson
 
 from django.http import HttpResponse
@@ -22,9 +24,6 @@ def render(request, template_filename, **kwargs):
 def msg(message, error=False):
     return simplejson.dumps({'error': error, 'message': message})
 
-def err(message):
-    return msg(message, True)
-
 def authenticate_user(realm, username):
     u = User.by_username(username)
     if u is None:
@@ -35,6 +34,79 @@ def get_user(username):
     u = User.by_username(username)
     return u
 
+def require_auth(func):
+    decorator_wrapper = requires_digest_auth(realm=User.realm, auth_callback=authenticate_user, user_callback=get_user)
+    return decorator_wrapper(func)
+
+def JsonResponse(body=None, message=None, error=False):
+    if body is None and message is None and error == False:
+        raise Exception('JsonResponse() requires at least one argument')
+
+    if message is None and error is False:
+        out = body
+    else:
+        out = {}
+        if message is not None:
+            out['message'] = message
+        if body is not None:
+            out['body'] = body
+        out['error'] = error
+
+    return HttpResponse(simplejson.dumps(out), 'text/json')
+
+class InvalidSchemaError(Exception):
+    """JSON sent in a PUT or POST did not conform to the expected schema"""
+    pass
+
+VALID_ID_CHARS = set([l for l in 'abcdef0123456789'])
+def validate_schema(jsonobj):
+    # it should be a flat list of
+    # dictionaries, no nesting. each dict
+    # should have keys 'status' (1 or 0),
+    # 'id' (32 characters in [0-9a-f]), and
+    # 'last_changed', a UNIX timestamp assumed
+    # to be in UTC time zone
+    #
+    # if everything is valid, returns a dict
+    # of lists, partitioned by item prefix
+
+    def validate_item(item):
+        keys = item.keys()
+        assert len(keys) == 3
+        assert 'id' in keys
+        assert 'status' in keys
+        assert 'last_changed' in keys
+
+        assert type(item['id']) in types.StringTypes
+        assert len(item['id']) == 32
+        assert len(set([l for l in item['id']]) - VALID_ID_CHARS) == 0
+
+        assert item['status'] in Status.STATUS_VALUES
+
+        assert type(item['last_changed']) == types.IntType
+
+    out = {}
+
+    for i, item in enumerate(jsonobj):
+        try:
+            assert type(item) == types.DictType
+            validate_item(item)
+        except AssertionError:
+            raise InvalidSchemaError('item %d' % (i + 1))
+        
+        prefix = item['id'][:2]
+        
+        if prefix not in out:
+            out[prefix] = []
+        out[prefix].append(item)
+
+    return out
+
+
+
+
+
+# HTML VIEW METHODS
 
 def index(request):
     return render(request, 'hello.html')
@@ -58,87 +130,123 @@ def register(request):
             submit_button='Register',
             )
 
-def login(request):
-    form = LoginForm()
-    if request.method == 'POST':
-        form = LoginForm(request.POST)
-        if form.is_valid():
-            request.session['username'] = request.POST['username']
-            request.session.save()
-            return HttpResponseRedirect(reverse('synk.views.user_home', args=[request.POST['username']]))
 
-    return render(request, 'login.html',
-            form=form,
-            form_action=reverse('synk.views.login'),
-            submit_button='Login',
-            )
+# API VIEW METHODS
 
-@allow_method('GET')
-@requires_digest_auth(realm=User.realm, auth_callback=authenticate_user, user_callback=get_user)
-def group_index(request):
+@allow_method('GET', 'PUT', 'POST', 'DELETE')
+@require_auth
+def status(request):
     user = request.user
 
-    groups = [x for x in Group.for_user(user)]
+    if request.method in ('GET'):
+        groups = Group.for_user(user)
+        out = []
+        for group in groups:
+            for status in group.get_statuses():
+                status.init_status_map()
+                for id, data in status.status_map.iteritems():
+                    data['id'] = id
+                    out.append(data)
 
-    if not groups:
-        g = Group()
-        g.name = 'Daring Fireball'
-        g.user = user
-        g.put()
+        return JsonResponse(out)
 
-        g = Group()
-        g.name = 'Coding Horror'
-        g.user = user
-        g.put()
+    elif request.method in ('PUT', 'POST'):
+        # put a new status item or group of stauts items,
+        # and return a confirmation for each along with its
+        # modified date
 
-        g = Group()
-        g.name = 'Joel on Software'
-        g.user = user
-        g.put()
+        try:
+            jsonobj = simplejson.loads(request.raw_post_data)
+        except:
+            return JsonResponse('Could not parse JSON in PUT body', error=True)
 
-        groups = [g for g in Group.for_user(user)]
+        try:
+            partitioned = validate_schema(jsonobj)
+        except InvalidSchemaError, e:
+            return JsonResponse('Invalid format for PUT body', error=True)
 
-    json = simplejson.dumps([g.to_dict() for g in groups])
+        groups = Group.for_user_prefixes(user, partitioned.keys())
+        groups_by_prefix = {}
+        for group in groups:
+            groups_by_prefix[group.prefix] = group
 
-    return HttpResponse(json, 'text/json')
+        for prefix, items in partitioned.iteritems():
+            if prefix not in groups_by_prefix:
+                group = Group()
+                group.user = user
+                group.prefix = prefix
+                group.put()
+                groups_by_prefix[prefix] = group
+            else:
+                group = groups_by_prefix[prefix]
 
-@allow_method('GET', 'PUT', 'POST', 'DELETE', 'HEAD')
-@requires_digest_auth(realm=User.realm, auth_callback=authenticate_user, user_callback=get_user)
-def group(request, group_id):
-    user = request.user
-    group = Group.by_id(user, group_id)
+            statuses = group.get_statuses()
 
-    if request.method in ('GET', 'HEAD'):
-        if group is None:
-            return HttpResponse(err('A group with id "%s" does not exist.' % group_id), 'text/json')
-        json = simplejson.dumps(group.to_dict())
-        return HttpResponse(json, 'text/json')
+            # for each item, see if it already exists,
+            # then update or insert as appropriate
+            for item in items:
+                item_id = item['id']
+                item_data = dict(item)
 
-    elif request.method == 'PUT':
-        PUT = QueryDict(request.raw_post_data)
-        if 'name' not in PUT:
-            return HttpResponse(err('Need "name" parameter'), 'text/json')
+                found = False
+                for status in statuses:
+                    del item_data['id']
 
-        name = PUT['name']
-        group = Group.by_id(user, Group.id_for_name(name))
-        if group is not None:
-            return HttpResponse(err('A group with name "%s" already exists' % name), 'text/json')
+                    if status.has_item(item_id):
+                        found = True
+                        status.set_item(item_id, item_data)
+                        break
 
-        group = Group()
-        group.user = user
-        group.name = name
-        group.put()
+                if not found:
+                    try:
+                        statuses[-1].set_item(item_id, item_data)
+                    except (FullStatusError, IndexError), e:
+                        newstatus = Status()
+                        newstatus.group = group
+                        newstatus.set_item(item_id, item_data)
+                        newstatus.put()
+                        statuses.append(newstatus)
 
-        return HttpResponse(msg('OK'), 'text/json')
+            for status in statuses:
+                status.put()
 
-    elif request.method == 'POST':
-        if 'name' in request.POST:
-            group.name = request.POST['name']
-
-        group.put()
-        return HttpResponse(msg('OK'), 'text/json')
+        return JsonResponse(message='OK')
 
     elif request.method == 'DELETE':
-        group.delete()
-        return HttpResponse(msg('OK'), 'text/json')
+        # delete items with the given ids. expect a flat
+        # JSON list of item IDs
+        try:
+            jsonobj = simplejson.loads(request.raw_post_data)
+        except:
+            return JsonResponse('Could not parse JSON in PUT body', error=True)
+
+        partitioned = {}
+        for id in jsonobj:
+            if len(id) == 32 and len(set([l for l in id]) - VALID_ID_CHARS) == 0:
+                prefix = id[:2]
+                if prefix not in partitioned:
+                    partitioned[prefix] = []
+                partitioned[prefix].append(id)
+
+        groups = Group.for_user_prefixes(user, partitioned.keys())
+        groups_by_prefix = {}
+        for group in groups:
+            groups_by_prefix[group.prefix] = group
+
+        for prefix, ids_to_delete in partitioned.iteritems():
+            if prefix not in groups_by_prefix:
+                # we don't know about these ids, so skip them
+                continue
+            group = groups_by_prefix[prefix]
+            statuses = group.get_statuses()
+
+            for status in statuses:
+                if status.has_item(id):
+                    status.del_item(id)
+                    break
+
+            for status in statuses:
+                status.put()
+
+        return JsonResponse(message='OK')
 

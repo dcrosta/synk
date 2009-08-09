@@ -1,9 +1,10 @@
 import md5
 import random
+import pickle
 
 from google.appengine.ext import db
 
-__all__ = ['User', 'Group', 'Status']
+__all__ = ['User', 'Group', 'Status', 'FullStatusError']
 
 class User(db.Model):
     username = db.StringProperty()
@@ -27,23 +28,11 @@ class User(db.Model):
             return None
 
 class Group(db.Model):
-    VALID_ID_CHARS = set([l for l in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'])
-
     user = db.ReferenceProperty(User)
 
-    # unique identifier of this Group,
-    # usually a hash or GUID
-    id = db.StringProperty()
-    name = db.StringProperty()
-
-    def put(self):
-        if self.id is None:
-            self.id = Group.id_for_name(self.name)
-        db.Model.put(self)
-
-    @staticmethod
-    def id_for_name(name):
-        return md5.new(name).hexdigest()
+    # the first two characters of the key of
+    # each item in the status_map (see Status)
+    prefix = db.StringProperty()
 
     @staticmethod
     def for_user(user):
@@ -51,51 +40,73 @@ class Group(db.Model):
         return groups
 
     @staticmethod
-    def by_id(user, group_id):
+    def for_user_prefix(user, prefix):
         try:
-            group = db.GqlQuery('select * from Group where id = :1 and user = :2', group_id, user)[0]
+            group = db.GqlQuery('select * from Group where prefix = :1 and user = :2', prefix, user)[0]
             return group
         except IndexError:
             return None
 
-    def to_dict(self):
-        return {'id': self.id, 'name': self.name}
+    @staticmethod
+    def for_user_prefixes(user, prefixes):
+        groups = db.GqlQuery('select * from Group where prefix in :1 and user = :2', prefixes, user)
+        return groups
 
-
+    def get_statuses(self):
+        statuses = db.GqlQuery('select * from Status where group = :1 order by fill_factor desc', self)
+        return [s for s in statuses]
 
 class Status(db.Model):
-    group = db.ReferenceProperty(Group)
+    STATUS_UNREAD = 0
+    STATUS_READ = 1
+    
+    STATUS_MAP = {}
+    STATUS_MAP['unread'] = STATUS_UNREAD
+    STATUS_MAP['read'] = STATUS_READ
 
-    # pickled python dictionary mapping status
-    # keys to status names
-    _status_key = db.TextProperty()
+    INVERSE_STATUS_MAP = dict([(value, key) for key, value in STATUS_MAP.iteritems()])
+    STATUS_VALUES = set(STATUS_MAP.values())
+
+    group = db.ReferenceProperty(Group)
 
     # pickled python dictionary mapping item id
     # to status key
-    _status_map = db.TextProperty()
+    status_map_pickle = db.TextProperty()
+    status_map = None
+    
+    max_size = 10000
+    fill_factor = db.FloatProperty()
 
-    def get_status_map(self):
-        status_map = {}
-        for id, status in self._status_map.iteritems():
-            status = self._status_key.get(status, '_UNKNOWN_')
-            status_map[id] = status
-        return status_map
-
-    def set_status_map(self, status_map):
-        # `status_map` is a dictionary mapping
-        # item ids (usually hashes or some sort
-        # of GUID) to status strings
-        status_id = 1
-        status_key = {}
-        status_map = {}
-        for id, status in status_map.iteritems():
-            if status in status_key:
-                status = status_key[status]
+    def init_status_map(self):
+        if self.status_map is None:
+            if self.status_map_pickle:
+                self.status_map = pickle.loads(self.status_map_pickle)
             else:
-                status_key[status] = status_id
-                status = status_id
-                status_id += 1
-            status_map[id] = status
-        self._status_key = status_key
-        self._status_map = status_map
+                self.status_map = {}
 
+    def has_item(self, id):
+        self.init_status_map()
+        return id in self.status_map
+
+    def get_item(self, id):
+        self.init_status_map()
+        return self.status_map[id]
+
+    def set_item(self, id, value):
+        self.init_status_map()
+        if not self.has_item(id) and len(self.status_map) >= self.max_size:
+            raise FullStatusError('Status is full')
+        self.status_map[id] = value
+
+    def del_item(self, id):
+        self.init_status_map()
+        del self.status_map[id]
+
+    def put(self):
+        self.status_map_pickle = pickle.dumps(self.status_map)
+        self.fill_factor = float(len(self.status_map_pickle)) / float(self.max_size)
+        db.Model.put(self)
+
+class FullStatusError(Exception):
+    """Raised when the status is at its max_size already"""
+    pass
