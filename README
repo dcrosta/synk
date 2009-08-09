@@ -1,0 +1,46 @@
+Synk is a really simple synchronization service targeting the Google App
+Engine Python platform. It is nothing more than a bag of (id, read/unread,
+last_changed_date) tuples. Clients interact with Synk via an HTTP(S)
+interface using HTTP Digest Authentication, using JSON as a wire format.
+
+= The API =
+
+There is only one service endpoint: /status
+
+GET /status
+  - returns a JSON list of objects with the following keys: 'id', 'status',
+    'last_changed'
+
+PUT /status
+POST /status
+  - update the data store for certain items (or all items). PUT or POST body
+    should contain a JSON list of objects with the following keys: 'id',
+    'status', 'last_changed'
+
+DELETE /status
+  - remove certain items from the data store. DELETE body should contain a
+    JSON list of the item IDs which are to be removed
+
+
+= The Format =
+
+GET, PUT, and POST requests will deal with (lists of) JSON objects of the
+following format:
+
+  {"id": "9180b4da3f0c7e80975fad685f7f134e",
+   "status": 1,
+   "last_changed": 1249853837}
+
+JSON objects with other keys will be rejected or ignored.
+
+- "id" must be 32 characters, and must contain only the digits 0 through 9
+  and the letters "a" through "f". Client apps should use the lowercase MD5
+  hexadecimal digest of a unique identifier to generate Synk ids. invalid
+  values will cause the item to be rejected or ignored.
+- "status" is the integer 1 (read) or 0 (unread). other values will cause
+  the item to be rejected or ignored.
+- "last_changed" is the UNIX timestamp (in UTC) of the last time the item's
+  status was changed. This value is preserved in the data store as-is from
+  the most recent PUT or POST request from a client.
+
+
