@@ -130,6 +130,9 @@ def register(request):
             submit_button='Register',
             )
 
+def dev(request):
+    return render(request, 'dev.html')
+
 
 # API VIEW METHODS
 

@@ -5,6 +5,7 @@ urlpatterns = patterns('synk.views',
 
     # web pages
     (r'^register$', 'register'),
+    (r'^dev$', 'dev'),
 
     # API URLs
     (r'^status$', 'status'),
