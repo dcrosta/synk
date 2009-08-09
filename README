@@ -43,4 +43,8 @@ JSON objects with other keys will be rejected or ignored.
   status was changed. This value is preserved in the data store as-is from
   the most recent PUT or POST request from a client.
 
+= License =
+
+Synk is distributed under a BSD-like license. Source code for Synk is
+available on GitHub at http://github.com/dcrosta/synk/tree/master.
 
