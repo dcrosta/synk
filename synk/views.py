@@ -72,18 +72,26 @@ def validate_schema(jsonobj):
 
     def validate_item(item):
         keys = item.keys()
-        assert len(keys) == 3
-        assert 'id' in keys
-        assert 'status' in keys
-        assert 'last_changed' in keys
 
-        assert type(item['id']) in types.StringTypes
-        assert len(item['id']) == 32
-        assert len(set([l for l in item['id']]) - VALID_ID_CHARS) == 0
+        if len(keys) != 3:
+            raise InvalidSchemaError("expected 3 keys, found: %s" % repr(keys))
+        
+        for key in ('id', 'status', 'last_changed'):
+            if key not in keys:
+                raise InvalidSchemaError("expected key '%s' (not found)" % key)
 
-        assert item['status'] in Status.STATUS_VALUES
+        if type(item['id']) not in types.StringTypes:
+            raise InvalidSchemaError("value for key 'id' must be a string")
+        if len(item['id']) != 32:
+            raise InvalidSchemaError("value for key 'id' must 32 characters long")
+        if len(set([l for l in item['id']]) - VALID_ID_CHARS) != 0:
+            raise InvalidSchemaError("value for key 'id' must contain only the characters [0-9a-f]")
 
-        assert type(item['last_changed']) == types.IntType
+        if type(item['status']) not in (types.IntType, types.LongType):
+            raise InvalidSchemaError("value for key 'status' must be an integer (got %s)" % type(item['status']))
+
+        if type(item['last_changed']) not in (types.IntType, types.LongType):
+            raise InvalidSchemaError("value for key 'last_changed' must be an integer")
 
     out = {}
 
@@ -93,6 +101,8 @@ def validate_schema(jsonobj):
             validate_item(item)
         except AssertionError:
             raise InvalidSchemaError('item %d' % (i + 1))
+        except InvalidSchemaError:
+            raise
         
         prefix = item['id'][:2]
         
