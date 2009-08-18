@@ -1,3 +1,5 @@
+import logging
+import time
 import types
 
 import simplejson
@@ -149,7 +151,10 @@ def dev(request):
 @allow_method('GET', 'PUT', 'POST', 'DELETE')
 @require_auth
 def status(request):
+    start = time.time()
+
     user = request.user
+    response = JsonResponse(message='OK')
 
     if request.method in ('GET'):
         groups = Group.for_user(user)
@@ -161,22 +166,21 @@ def status(request):
                     data['id'] = id
                     out.append(data)
 
-        return JsonResponse(out)
+        response = JsonResponse(out)
 
     elif request.method in ('PUT', 'POST'):
         # put a new status item or group of stauts items,
         # and return a confirmation for each along with its
         # modified date
-
         try:
             jsonobj = simplejson.loads(request.raw_post_data)
         except:
-            return JsonResponse('Could not parse JSON in PUT body', error=True)
+            response = JsonResponse('Could not parse JSON in PUT body', error=True)
 
         try:
             partitioned = validate_schema(jsonobj)
         except InvalidSchemaError, e:
-            return JsonResponse('Invalid format for PUT body', error=True)
+            response = JsonResponse('Invalid format for PUT body: %s' % e.message, error=True)
 
         groups = Group.for_user_prefixes(user, partitioned.keys())
         groups_by_prefix = {}
@@ -194,36 +198,40 @@ def status(request):
                 group = groups_by_prefix[prefix]
 
             statuses = group.get_statuses()
+            modified_statuses = set()
 
             # for each item, see if it already exists,
             # then update or insert as appropriate
             for item in items:
                 item_id = item['id']
-                item_data = dict(item)
 
                 found = False
                 for status in statuses:
-                    del item_data['id']
+                    del item['id']
 
-                    if status.has_item(item_id):
-                        found = True
-                        status.set_item(item_id, item_data)
-                        break
+                    existing_item = status.get_item(item_id)
+                    if existing_item is not None and item['last_changed'] > existing_item['last_changed']:
+                        status.set_item(item_id, item)
+                        modified_statuses.add(status)
+                        continue
+                    elif existing_item:
+                        # existing item is newer, so just move on
+                        continue
 
-                if not found:
-                    try:
-                        statuses[-1].set_item(item_id, item_data)
-                    except (FullStatusError, IndexError), e:
-                        newstatus = Status()
-                        newstatus.group = group
-                        newstatus.set_item(item_id, item_data)
-                        newstatus.put()
-                        statuses.append(newstatus)
+                # if we didn't find and update an existing item,
+                # then insert it into the last (least-full) status
+                try:
+                    statuses[-1].set_item(item_id, item)
+                    modified_statuses.add(statuses[-1])
+                except (FullStatusError, IndexError), e:
+                    newstatus = Status()
+                    newstatus.group = group
+                    newstatus.set_item(item_id, item)
+                    statuses.append(newstatus)
+                    modified_statuses.add(newstatus)
 
-            for status in statuses:
+            for status in modified_statuses:
                 status.put()
-
-        return JsonResponse(message='OK')
 
     elif request.method == 'DELETE':
         # delete items with the given ids. expect a flat
@@ -231,7 +239,7 @@ def status(request):
         try:
             jsonobj = simplejson.loads(request.raw_post_data)
         except:
-            return JsonResponse('Could not parse JSON in PUT body', error=True)
+            response = JsonResponse('Could not parse JSON in PUT body', error=True)
 
         partitioned = {}
         for id in jsonobj:
@@ -261,5 +269,9 @@ def status(request):
             for status in statuses:
                 status.put()
 
-        return JsonResponse(message='OK')
+
+    end = time.time()
+    logging.info("TIME %s %s %f sec", request.method, request.path, end - start)
+
+    return response
 
