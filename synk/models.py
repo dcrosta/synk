@@ -34,6 +34,17 @@ class Group(db.Model):
     # each item in the status_map (see Status)
     prefix = db.StringProperty()
 
+    # total per-user capacity is 16 ** PREFIX_LEN * 11000 * 1000
+    # ... so about 176M (with theoretical full capacity and no
+    # key collisions... not sure if this is realistic)
+    #
+    # for users with smaller collections (probably most users)
+    # setting this too high causes lots of datastore overhead
+    # because we're forced to do a lot of looping in the
+    # /status handler. leave it at 1 for now unless it
+    # becomes apparent that this is limiting
+    PREFIX_LEN = 1
+
     @staticmethod
     def for_user(user):
         groups = db.GqlQuery('select * from Group where user = :1', user)

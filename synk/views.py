@@ -104,7 +104,7 @@ def validate_schema(jsonobj):
         except InvalidSchemaError:
             raise
         
-        prefix = item['id'][:2]
+        prefix = item['id'][:Group.PREFIX_LEN]
         
         if prefix not in out:
             out[prefix] = []
@@ -236,7 +236,7 @@ def status(request):
         partitioned = {}
         for id in jsonobj:
             if len(id) == 32 and len(set([l for l in id]) - VALID_ID_CHARS) == 0:
-                prefix = id[:2]
+                prefix = id[:Group.PREFIX_LEN]
                 if prefix not in partitioned:
                     partitioned[prefix] = []
                 partitioned[prefix].append(id)
