@@ -13,13 +13,13 @@ __all__ = ['User', 'Group', 'Status', 'FullStatusError']
 def serialize(obj):
     start = time.time()
     out = simplejson.dumps(obj, separators=[',', ':'])
-    logging.info('serializing time: %f', time.time() - start)
+    logging.debug('serializing time: %f', time.time() - start)
     return out
 
 def deserialize(obj):
     start = time.time()
     out = simplejson.loads(obj)
-    logging.info('deserializing time: %f', time.time() - start)
+    logging.debug('deserializing time: %f', time.time() - start)
     return out
 
 class User(db.Model):
@@ -66,7 +66,7 @@ class Group(db.Model):
         start = time.time()
         groups = db.GqlQuery('select * from Group where user = :1', user)
         end = time.time()
-        logging.info("Group.for_user: %f", end - start)
+        logging.debug("Group.for_user: %f", end - start)
         return groups
 
     @staticmethod
@@ -75,14 +75,14 @@ class Group(db.Model):
         groups = db.GqlQuery('select * from Group where user = :1', user)
         groups = [group for group in groups if group.prefix in set(prefixes)]
         end = time.time()
-        logging.info("Group.for_user_prefixes: %f", end - start)
+        logging.debug("Group.for_user_prefixes: %f", end - start)
         return groups
 
     def get_statuses(self):
         start = time.time()
         statuses = db.GqlQuery('select * from Status where group = :1 order by fill_factor desc', self)
         end = time.time()
-        logging.info("Group.get_statuses: %f", end - start)
+        logging.debug("Group.get_statuses: %f", end - start)
         return [s for s in statuses]
 
 class Status(db.Model):
@@ -113,7 +113,7 @@ class Status(db.Model):
     def init_status_map(self):
         if self.status_map is None and self.status_map_serialized:
             self.status_map = deserialize(self.status_map_serialized)
-            logging.info("%d items, %d bytes, %f fill factor", len(self.status_map), len(self.status_map_serialized), self.fill_factor)
+            logging.debug("%d items, %d bytes, %f fill factor", len(self.status_map), len(self.status_map_serialized), self.fill_factor)
         elif self.status_map is None:
             self.status_map = {}
 
@@ -148,7 +148,7 @@ class Status(db.Model):
         self.fill_factor = float(len(self.status_map_serialized)) / float(self.max_len)
         db.Model.put(self)
         if settings.PROFILING:
-            logging.info("%d items, %d bytes, %f fill factor", len(self.status_map), len(self.status_map_serialized), self.fill_factor)
+            logging.debug("%d items, %d bytes, %f fill factor", len(self.status_map), len(self.status_map_serialized), self.fill_factor)
 
 class FullStatusError(Exception):
     """Raised when the status is at its max_size already"""

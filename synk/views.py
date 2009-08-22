@@ -277,7 +277,7 @@ def status(request):
 
 
     end = time.time()
-    logging.info("TIME %s %s %f sec", request.method, request.path, end - start)
+    logging.info("request time %s %s %f sec", request.method, request.path, end - start)
 
     return response
 
