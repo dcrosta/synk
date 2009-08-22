@@ -12,7 +12,7 @@ __all__ = ['User', 'Group', 'Status', 'FullStatusError']
 
 def serialize(obj):
     start = time.time()
-    out = simplejson.dumps(obj)
+    out = simplejson.dumps(obj, separators=[',', ':'])
     logging.info('serializing time: %f', time.time() - start)
     return out
 
