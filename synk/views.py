@@ -187,6 +187,8 @@ def status(request):
         for group in groups:
             groups_by_prefix[group.prefix] = group
 
+        mod_count = 0
+
         for prefix, items in partitioned.iteritems():
             if prefix not in groups_by_prefix:
                 group = Group()
@@ -212,6 +214,7 @@ def status(request):
                     existing_item = status.get_item(item_id)
                     if existing_item is not None and item['last_changed'] > existing_item['last_changed']:
                         status.set_item(item_id, item)
+                        mod_count += 1
                         modified_statuses.add(status)
                         continue
                     elif existing_item:
@@ -229,9 +232,12 @@ def status(request):
                     newstatus.set_item(item_id, item)
                     statuses.append(newstatus)
                     modified_statuses.add(newstatus)
+                mod_count += 1
 
             for status in modified_statuses:
                 status.put()
+
+            logging.info("modified %d items in %d statuses", mod_count, len(modified_statuses))
 
     elif request.method == 'DELETE':
         # delete items with the given ids. expect a flat
