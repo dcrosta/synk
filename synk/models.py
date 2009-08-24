@@ -86,16 +86,6 @@ class Group(db.Model):
         return [s for s in statuses]
 
 class Status(db.Model):
-    STATUS_UNREAD = 0
-    STATUS_READ = 1
-    
-    STATUS_MAP = {}
-    STATUS_MAP['unread'] = STATUS_UNREAD
-    STATUS_MAP['read'] = STATUS_READ
-
-    INVERSE_STATUS_MAP = dict([(value, key) for key, value in STATUS_MAP.iteritems()])
-    STATUS_VALUES = set(STATUS_MAP.values())
-
     group = db.ReferenceProperty(Group)
 
     # serialized python dictionary mapping item id
