@@ -83,7 +83,9 @@ class Group(db.Model):
         statuses = db.GqlQuery('select * from Status where group = :1 order by fill_factor desc', self)
         end = time.time()
         logging.debug("Group.get_statuses: %f", end - start)
-        return [s for s in statuses]
+        for s in statuses:
+            s.init_status_map()
+            yield s
 
 class Status(db.Model):
     group = db.ReferenceProperty(Group)
@@ -108,11 +110,9 @@ class Status(db.Model):
             self.status_map = {}
 
     def has_item(self, id):
-        self.init_status_map()
         return id in self.status_map
 
     def get_item(self, id):
-        self.init_status_map()
         try:
             return self.status_map[id]
         except KeyError:
@@ -123,14 +123,12 @@ class Status(db.Model):
             or len(self.status_map) >= self.max_size
 
     def set_item(self, id, value):
-        self.init_status_map()
         if not self.has_item(id) and self.is_full():
             logging.warn("raising FullStatusError with %d items", len(self.status_map))
             raise FullStatusError('Status is full')
         self.status_map[id] = value
 
     def del_item(self, id):
-        self.init_status_map()
         del self.status_map[id]
 
     def put(self):

@@ -161,7 +161,6 @@ def status(request):
         out = []
         for group in groups:
             for status in group.get_statuses():
-                status.init_status_map()
                 for id, data in status.status_map.iteritems():
                     data['id'] = id
                     out.append(data)
@@ -199,7 +198,7 @@ def status(request):
             else:
                 group = groups_by_prefix[prefix]
 
-            statuses = group.get_statuses()
+            statuses = [s for s in group.get_statuses()]
             modified_statuses = set()
 
             # for each item, see if it already exists,
@@ -265,9 +264,8 @@ def status(request):
                 # we don't know about these ids, so skip them
                 continue
             group = groups_by_prefix[prefix]
-            statuses = group.get_statuses()
 
-            for status in statuses:
+            for status in group.get_statuses():
                 if status.has_item(id):
                     status.del_item(id)
                     break
