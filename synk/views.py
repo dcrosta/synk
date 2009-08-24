@@ -186,9 +186,12 @@ def status(request):
         for group in groups:
             groups_by_prefix[group.prefix] = group
 
-        mod_count = 0
+        item_mod_count = 0
+        status_mod_count = 0
 
         for prefix, items in partitioned.iteritems():
+            item_mod_count += len(items)
+
             if prefix not in groups_by_prefix:
                 group = Group()
                 group.user = user
@@ -199,7 +202,6 @@ def status(request):
                 group = groups_by_prefix[prefix]
 
             statuses = [s for s in group.get_statuses()]
-            modified_statuses = set()
 
             # for each item, see if it already exists,
             # then update or insert as appropriate
@@ -211,32 +213,32 @@ def status(request):
                     del item['id']
 
                     existing_item = status.get_item(item_id)
-                    if existing_item is not None and item['last_changed'] > existing_item['last_changed']:
-                        status.set_item(item_id, item)
-                        mod_count += 1
-                        modified_statuses.add(status)
-                        continue
+                    if existing_item and existing_item['last_changed'] >= item['last_changed']:
+                        found = True
+                        item_mod_count -= 1
+                        break
                     elif existing_item:
-                        # existing item is newer, so just move on
-                        continue
+                        status.update_item(item_id, item)
+                        break
+                    # else continue
 
-                # if we didn't find and update an existing item,
-                # then insert it into the last (least-full) status
-                try:
-                    statuses[-1].set_item(item_id, item)
-                    modified_statuses.add(statuses[-1])
-                except (FullStatusError, IndexError), e:
-                    newstatus = Status()
-                    newstatus.group = group
-                    newstatus.set_item(item_id, item)
-                    statuses.append(newstatus)
-                    modified_statuses.add(newstatus)
-                mod_count += 1
+                if not found:
+                    # if we didn't find and update an existing item,
+                    # then insert it into the last (least-full) status
+                    try:
+                        statuses[-1].add_item(item_id, item)
+                    except (FullStatusError, IndexError), e:
+                        status = Status()
+                        status.group = group
+                        status.add_item(item_id, item)
+                        statuses.append(status)
 
-            for status in modified_statuses:
-                status.put()
+            for status in statuses:
+                if status.is_modified:
+                    status.put()
+                    status_mod_count += 1
 
-            logging.info("modified %d items in %d statuses", mod_count, len(modified_statuses))
+        logging.info("modified %d items in %d statuses", item_mod_count, status_mod_count)
 
     elif request.method == 'DELETE':
         # delete items with the given ids. expect a flat

@@ -102,6 +102,12 @@ class Status(db.Model):
     max_len = 900000
     fill_factor = db.FloatProperty()
 
+    is_modified = False
+
+    def __init__(self, *args, **kwargs):
+        db.Model.__init__(self, *args, **kwargs)
+        self.init_status_map()
+
     def init_status_map(self):
         if self.status_map is None and self.status_map_serialized:
             self.status_map = deserialize(self.status_map_serialized)
@@ -122,14 +128,23 @@ class Status(db.Model):
         return settings.PROFILING and len(serialize(self.status_map)) >= self.max_len \
             or len(self.status_map) >= self.max_size
 
-    def set_item(self, id, value):
-        if not self.has_item(id) and self.is_full():
+    def update_item(self, id, value):
+        self.status_map[id] = value
+        self.is_modified = True
+
+    def add_item(self, id, value):
+        if self.is_full():
             logging.warn("raising FullStatusError with %d items", len(self.status_map))
             raise FullStatusError('Status is full')
         self.status_map[id] = value
+        self.is_modified = True
 
     def del_item(self, id):
-        del self.status_map[id]
+        try:
+            del self.status_map[id]
+            self.is_modified = True
+        except:
+            pass
 
     def put(self):
         self.status_map_serialized = serialize(self.status_map)
