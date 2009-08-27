@@ -8,5 +8,6 @@ urlpatterns = patterns('synk.views',
     (r'^dev$', 'dev'),
 
     # API URLs
-    (r'^status$', 'status'),
+    (r'^status$', 'status', {'since': '0'}),
+    (r'^status/since/(?P<since>[\d\.]+)$', 'status'),
 )

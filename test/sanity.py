@@ -71,6 +71,13 @@ class SynkRig(object):
         if headers['status'] != '200':
             raise Exception('Error during POST\n%s\n\n%s' % (headers, response))
 
+    def delete(self):
+        json = simplejson.dumps(self.items.keys())
+        headers, response = self.conn.request(self.url, method='DELETE', body=json)
+
+        if headers['status'] != '200':
+            raise Exception('Error during DELETE\n%s\n\n%s' % (headers, response))
+
 class TestBasicCase(unittest.TestCase):
 
     def test_gets_downloads(self):
@@ -96,6 +103,8 @@ class TestBasicCase(unittest.TestCase):
 
         self.assertEqual((0, 0), a.get())
         self.assertEqual((0, 0), b.get())
+
+        b.delete()
 
 
 if __name__ == '__main__':

@@ -1,13 +1,13 @@
 import logging
+import sys
 import time
 import types
 
 import simplejson
 
 from django.http import HttpResponse
-from django.http import HttpResponseForbidden
+from django.http import HttpResponseServerError
 from django.http import HttpResponseRedirect
-from django.http import QueryDict
 from django.core.urlresolvers import reverse
 
 from google.appengine.ext.webapp import template
@@ -54,7 +54,10 @@ def JsonResponse(body=None, message=None, error=False):
             out['body'] = body
         out['error'] = error
 
-    return HttpResponse(simplejson.dumps(out), 'text/json')
+    if error:
+        return HttpResponseServerError(simplejson.dumps(out), 'text/json')
+    else:
+        return HttpResponse(simplejson.dumps(out), 'text/json')
 
 class InvalidSchemaError(Exception):
     """JSON sent in a PUT or POST did not conform to the expected schema"""
@@ -69,8 +72,8 @@ def validate_schema(jsonobj):
     # 'last_changed', a UNIX timestamp assumed
     # to be in UTC time zone
     #
-    # if everything is valid, returns a dict
-    # of lists, partitioned by item prefix
+    # if everything is valid, returns the earliest
+    # last_changed that was present in the input
 
     def validate_item(item):
         keys = item.keys()
@@ -95,27 +98,29 @@ def validate_schema(jsonobj):
         if type(item['last_changed']) not in (types.IntType, types.LongType):
             raise InvalidSchemaError("value for key 'last_changed' must be an integer")
 
-    out = {}
-
+    earliest = sys.maxint
     for i, item in enumerate(jsonobj):
         try:
             assert type(item) == types.DictType
             validate_item(item)
+            if item['last_changed'] < earliest:
+                earliest = item['last_changed']
         except AssertionError:
             raise InvalidSchemaError('item %d' % (i + 1))
         except InvalidSchemaError:
             raise
+
+    return earliest
+
+def log_request_time(view_func, logfunc=logging.info):
+    def inner(request, *args, **kwargs):
+        start = time.time()
+        response = view_func(request, *args, **kwargs)
+        logfunc("request time %s %s %f sec", request.method, request.path, time.time() - start)
+        return response
+    return inner
+                
         
-        prefix = item['id'][:Group.PREFIX_LEN]
-        
-        if prefix not in out:
-            out[prefix] = []
-        out[prefix].append(item)
-
-    return out
-
-
-
 
 
 # HTML VIEW METHODS
@@ -150,134 +155,103 @@ def dev(request):
 
 @allow_method('GET', 'PUT', 'POST', 'DELETE')
 @require_auth
-def status(request):
-    start = time.time()
-
+@log_request_time
+def status(request, since):
     user = request.user
-    response = JsonResponse(message='OK')
 
     if request.method in ('GET'):
-        groups = Group.for_user(user)
+        since = int(since)
         out = []
-        for group in groups:
-            for status in group.get_statuses():
-                for id, data in status.status_map.iteritems():
-                    data['id'] = id
-                    out.append(data)
-
-        response = JsonResponse(out)
+        for journal in reversed(user.journals(since=since)):
+            for id, item in journal.iteritems():
+                item['id'] = id
+                out.append(item)
+        
+        return JsonResponse(out)
 
     elif request.method in ('PUT', 'POST'):
         # put a new status item or group of stauts items,
         # and return a confirmation for each along with its
         # modified date
         try:
-            jsonobj = simplejson.loads(request.raw_post_data)
+            items = simplejson.loads(request.raw_post_data)
         except:
-            response = JsonResponse('Could not parse JSON in PUT body', error=True)
+            return JsonResponse('Could not parse JSON in PUT body', error=True)
 
         try:
-            partitioned = validate_schema(jsonobj)
+            earliest = validate_schema(items)
         except InvalidSchemaError, e:
-            response = JsonResponse('Invalid format for PUT body: %s' % e.message, error=True)
+            return JsonResponse('Invalid format for PUT body: %s' % e.message, error=True)
 
-        groups = Group.for_user_prefixes(user, partitioned.keys())
-        groups_by_prefix = {}
-        for group in groups:
-            groups_by_prefix[group.prefix] = group
+        journals = user.journals(since=earliest)
 
-        item_mod_count = 0
-        status_mod_count = 0
-
-        for prefix, items in partitioned.iteritems():
-            item_mod_count += len(items)
-
-            if prefix not in groups_by_prefix:
-                group = Group()
-                group.user = user
-                group.prefix = prefix
-                group.put()
-                groups_by_prefix[prefix] = group
-            else:
-                group = groups_by_prefix[prefix]
-
-            statuses = [s for s in group.get_statuses()]
-
-            # for each item, see if it already exists,
-            # then update or insert as appropriate
+        # first update existing items
+        items_updated = 0
+        for journal in journals:
+            remaining = []
             for item in items:
-                item_id = item['id']
+                id = item['id']
+                if id in journal:
+                    if journal[id]['last_changed'] < item['last_changed']:
+                        del item['id']
+                        journal[id] = item
+                        items_updated += 1
+                    # else the existing one is newer, so skip this
+                else:
+                    remaining.append(item)
+            items = remaining
 
-                found = False
-                for status in statuses:
-                    del item['id']
+        # then add items to the first journal
+        items_added = len(items)
+        try:
+            first = journals[0]
+        except IndexError:
+            first = Journal()
+            first.user = user
+            journals.append(first)
 
-                    existing_item = status.get_item(item_id)
-                    if existing_item and existing_item['last_changed'] >= item['last_changed']:
-                        found = True
-                        item_mod_count -= 1
-                        break
-                    elif existing_item:
-                        status.update_item(item_id, item)
-                        break
-                    # else continue
+        for item in items:
+            id = item['id']
+            del item['id']
 
-                if not found:
-                    # if we didn't find and update an existing item,
-                    # then insert it into the last (least-full) status
-                    try:
-                        statuses[-1].add_item(item_id, item)
-                    except (FullStatusError, IndexError), e:
-                        status = Status()
-                        status.group = group
-                        status.add_item(item_id, item)
-                        statuses.append(status)
+            try:
+                first[id] = item
+            except FullJournalError:
+                first = Journal()
+                first.user = user
+                journals.insert(0, first)
+                first[id] = item
 
-            for status in statuses:
-                if status.is_modified:
-                    status.put()
-                    status_mod_count += 1
+        for journal in journals:
+            journal.put()
 
-        logging.info("modified %d items in %d statuses", item_mod_count, status_mod_count)
+        logging.info("added %d, updated %d", items_added, items_updated)
 
     elif request.method == 'DELETE':
-        # delete items with the given ids. expect a flat
-        # JSON list of item IDs
+        # delete accepts a list of item IDs
         try:
-            jsonobj = simplejson.loads(request.raw_post_data)
+            item_ids = simplejson.loads(request.raw_post_data)
         except:
-            response = JsonResponse('Could not parse JSON in PUT body', error=True)
+            return JsonResponse('Could not parse JSON in PUT body', error=True)
 
-        partitioned = {}
-        for id in jsonobj:
-            if len(id) == 32 and len(set([l for l in id]) - VALID_ID_CHARS) == 0:
-                prefix = id[:Group.PREFIX_LEN]
-                if prefix not in partitioned:
-                    partitioned[prefix] = []
-                partitioned[prefix].append(id)
+        for i, id in enumerate(item_ids):
+            if not type(id) in types.StringTypes or len(id) != 32:
+                return JsonResponse('Invalid format for DELETE body: item %d must be 32-char string' % i, error=True)
 
-        groups = Group.for_user_prefixes(user, partitioned.keys())
-        groups_by_prefix = {}
-        for group in groups:
-            groups_by_prefix[group.prefix] = group
+        journals = user.journals()
 
-        for prefix, ids_to_delete in partitioned.iteritems():
-            if prefix not in groups_by_prefix:
-                # we don't know about these ids, so skip them
-                continue
-            group = groups_by_prefix[prefix]
+        # first update existing items
+        items_updated = 0
+        for journal in journals:
+            for id in item_ids:
+                try:
+                    del journal[id]
+                except KeyError:
+                    pass
 
-            for status in group.get_statuses():
-                if status.has_item(id):
-                    status.del_item(id)
-                    break
+        for journal in journals:
+            journal.put()
 
-            for status in statuses:
-                status.put()
+        logging.info("deleted %d", len(item_ids))
 
-
-    end = time.time()
-    logging.info("request time %s %s %f sec", request.method, request.path, end - start)
-
-    return response
-
+    return JsonResponse('OK')

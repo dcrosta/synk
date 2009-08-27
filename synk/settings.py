@@ -84,3 +84,8 @@ INSTALLED_APPS = (
 
     'synk'
 )
+
+try:
+    from local_settings import *
+except:
+    pass

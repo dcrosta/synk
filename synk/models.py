@@ -1,6 +1,6 @@
 import md5
-import random
 import simplejson
+import sys
 import logging
 import time
 
@@ -8,18 +8,20 @@ from django.conf import settings
 
 from google.appengine.ext import db
 
-__all__ = ['User', 'Group', 'Status', 'FullStatusError']
+__all__ = ['User', 'Journal', 'FullJournalError']
 
 def serialize(obj):
     start = time.time()
     out = simplejson.dumps(obj, separators=[',', ':'])
-    logging.debug('serializing time: %f', time.time() - start)
+    if settings.PROFILING:
+        logging.debug('serializing time: %f', time.time() - start)
     return out
 
 def deserialize(obj):
     start = time.time()
     out = simplejson.loads(obj)
-    logging.debug('deserializing time: %f', time.time() - start)
+    if settings.PROFILING:
+        logging.debug('deserializing time: %f', time.time() - start)
     return out
 
 class User(db.Model):
@@ -35,6 +37,13 @@ class User(db.Model):
         ha1 = md5.new(a1)
         self.password_hash = ha1.hexdigest()
 
+    def journals(self, since=0):
+        journals = list(db.GqlQuery('select * from Journal where user = :1 and latest >= :2 order by latest desc', self, since))
+        if len(journals) == 0:
+            # always try to get at least 1
+            journals = list(db.GqlQuery('select * from Journal where user = :1 order by latest desc limit 1', self))
+        return journals
+
     @staticmethod
     def by_username(username):
         try:
@@ -43,56 +52,21 @@ class User(db.Model):
         except IndexError:
             return None
 
-class Group(db.Model):
+class FullJournalError(Exception):
+    """Raised when the status is at its max_size already"""
+    pass
+
+class Journal(db.Model):
     user = db.ReferenceProperty(User)
 
-    # the first two characters of the key of
-    # each item in the status_map (see Status)
-    prefix = db.StringProperty()
-
-    # total per-user capacity is 16 ** PREFIX_LEN * 11000 * 1000
-    # ... so about 176M (with theoretical full capacity and no
-    # key collisions... not sure if this is realistic)
-    #
-    # for users with smaller collections (probably most users)
-    # setting this too high causes lots of datastore overhead
-    # because we're forced to do a lot of looping in the
-    # /status handler. leave it at 1 for now unless it
-    # becomes apparent that this is limiting
-    PREFIX_LEN = 1
-
-    @staticmethod
-    def for_user(user):
-        start = time.time()
-        groups = db.GqlQuery('select * from Group where user = :1', user)
-        end = time.time()
-        logging.debug("Group.for_user: %f", end - start)
-        return groups
-
-    @staticmethod
-    def for_user_prefixes(user, prefixes):
-        start = time.time()
-        groups = db.GqlQuery('select * from Group where user = :1', user)
-        groups = [group for group in groups if group.prefix in set(prefixes)]
-        end = time.time()
-        logging.debug("Group.for_user_prefixes: %f", end - start)
-        return groups
-
-    def get_statuses(self):
-        start = time.time()
-        statuses = db.GqlQuery('select * from Status where group = :1 order by fill_factor desc', self)
-        end = time.time()
-        logging.debug("Group.get_statuses: %f", end - start)
-        for s in statuses:
-            s.init_status_map()
-            yield s
-
-class Status(db.Model):
-    group = db.ReferenceProperty(Group)
+    # the greatest and least last_changed of any item
+    # in this Journal
+    latest = db.IntegerProperty(default=0)
+    earliest = db.IntegerProperty(default=sys.maxint)
 
     # serialized python dictionary mapping item id
     # to status key
-    status_map_serialized = db.TextProperty()
+    status_map_serialized = db.TextProperty(default='{}')
     status_map = None
     
     # max_size is based on max_len of 900000 bytes
@@ -102,49 +76,18 @@ class Status(db.Model):
     max_len = 900000
     fill_factor = db.FloatProperty()
 
-    is_modified = False
-
     def __init__(self, *args, **kwargs):
         db.Model.__init__(self, *args, **kwargs)
-        self.init_status_map()
 
-    def init_status_map(self):
-        if self.status_map is None and self.status_map_serialized:
+        if self.status_map_serialized:
             self.status_map = deserialize(self.status_map_serialized)
             logging.debug("%d items, %d bytes, %f fill factor", len(self.status_map), len(self.status_map_serialized), self.fill_factor)
-        elif self.status_map is None:
+        else:
             self.status_map = {}
-
-    def has_item(self, id):
-        return id in self.status_map
-
-    def get_item(self, id):
-        try:
-            return self.status_map[id]
-        except KeyError:
-            return None
 
     def is_full(self):
         return settings.PROFILING and len(serialize(self.status_map)) >= self.max_len \
             or len(self.status_map) >= self.max_size
-
-    def update_item(self, id, value):
-        self.status_map[id] = value
-        self.is_modified = True
-
-    def add_item(self, id, value):
-        if self.is_full():
-            logging.warn("raising FullStatusError with %d items", len(self.status_map))
-            raise FullStatusError('Status is full')
-        self.status_map[id] = value
-        self.is_modified = True
-
-    def del_item(self, id):
-        try:
-            del self.status_map[id]
-            self.is_modified = True
-        except:
-            pass
 
     def put(self):
         self.status_map_serialized = serialize(self.status_map)
@@ -153,6 +96,51 @@ class Status(db.Model):
         if settings.PROFILING:
             logging.debug("%d items, %d bytes, %f fill factor", len(self.status_map), len(self.status_map_serialized), self.fill_factor)
 
-class FullStatusError(Exception):
-    """Raised when the status is at its max_size already"""
-    pass
+    # implement dictionary protocol
+    def __len__(self):
+        return len(self.status_map)
+
+    def __contains__(self, element):
+        return (element in self.status_map)
+
+    def __getitem__(self, key):
+        return self.status_map[key]
+
+    def __setitem__(self, key, value):
+        if self.is_full():
+            if settings.PROFILING:
+                logging.warn('FullJournalException with %d items' % len(self.status_map))
+            raise FullJournalException()
+
+        last_changed = value['last_changed'] 
+        if last_changed > self.latest:
+            self.latest = last_changed
+        if last_changed < self.earliest:
+            self.earliest = last_changed
+
+        self.status_map[key] = value
+
+    def __delitem__(self, key):
+        del self.status_map[key]
+
+    def __iter__(self):
+        return iter(self.status_map)
+
+    def keys(self):
+        return self.status_map.keys()
+
+    def iterkeys(self):
+        return self.status_map.iterkeys()
+
+    def values(self):
+        return self.status_map.values()
+
+    def itervalues(self):
+        return self.status_map.itervalues()
+
+    def items(self):
+        return self.status_map.items()
+
+    def iteritems(self):
+        return self.status_map.iteritems()
+
