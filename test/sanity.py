@@ -89,12 +89,13 @@ class TestBasicCase(unittest.TestCase):
                     Item(4, 0, -1000),
         ], username='user1')
         b.post()
-        assert (0, 3) == b.get()
 
-        assert (1, 0) == a.get()
+        self.assertEqual((0, 3), b.get())
 
-        assert (0, 0) == a.get()
-        assert (0, 0) == b.get()
+        self.assertEqual((1, 0), a.get())
+
+        self.assertEqual((0, 0), a.get())
+        self.assertEqual((0, 0), b.get())
 
 
 if __name__ == '__main__':
