@@ -1,6 +1,6 @@
 # Django settings for synk project.
 
-DEBUG = True
+DEBUG = False
 TEMPLATE_DEBUG = DEBUG
 PROFILING = False
 
