@@ -7,21 +7,14 @@ import simplejson
 
 from django.http import HttpResponse
 from django.http import HttpResponseServerError
-from django.http import HttpResponseRedirect
-from django.core.urlresolvers import reverse
 
 from google.appengine.ext.webapp import template
 
 from synk.models import *
-from synk.forms import UserForm
 
 from synk.middleware import requires_digest_auth
 from synk.middleware import allow_method
 
-
-def render(request, template_filename, **kwargs):
-    template_filename = 'synk/templates/' + template_filename
-    return HttpResponse(template.render(template_filename, kwargs))
 
 def msg(message, error=False):
     return simplejson.dumps({'error': error, 'message': message})
@@ -120,38 +113,6 @@ def log_request_time(view_func, logfunc=logging.info):
         return response
     return inner
                 
-        
-
-
-# HTML VIEW METHODS
-
-def index(request):
-    return render(request, 'index.html')
-
-def register(request):
-    form = UserForm()
-
-    if request.method == 'POST':
-        form = UserForm(request.POST)
-        if form.is_valid():
-            u = User()
-            u.username = request.POST['username']
-            u.set_password(request.POST['password'])
-            u.put()
-
-            return HttpResponseRedirect('/')
-    
-    return render(request, 'register.html',
-            form=form,
-            form_action=reverse('synk.views.register'),
-            submit_button='Register',
-            )
-
-def dev(request):
-    return render(request, 'dev.html')
-
-
-# API VIEW METHODS
 
 @allow_method('GET', 'PUT', 'POST', 'DELETE')
 @require_auth

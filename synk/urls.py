@@ -1,13 +1,12 @@
 from django.conf.urls.defaults import *
 
-urlpatterns = patterns('synk.views',
-    (r'^$', 'index'),
-
+urlpatterns = patterns('synk',
     # web pages
-    (r'^register$', 'register'),
-    (r'^dev$', 'dev'),
+    (r'^$', 'web.index'),
+    (r'^register$', 'web.register'),
+    (r'^dev$', 'web.dev'),
 
     # API URLs
-    (r'^status$', 'status', {'since': '0'}),
-    (r'^status/since/(?P<since>[\d\.]+)$', 'status'),
+    (r'^status$', 'service.status', {'since': '0'}),
+    (r'^status/since/(?P<since>[\d\.]+)$', 'service.status'),
 )
