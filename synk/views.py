@@ -14,6 +14,7 @@ from google.appengine.ext.webapp import template
 
 from synk.models import *
 from synk.forms import UserForm
+from synk.datautil import *
 
 from synk.middleware import requires_digest_auth
 from synk.middleware import allow_method
@@ -40,6 +41,8 @@ def require_auth(func):
     decorator_wrapper = requires_digest_auth(realm=User.realm, auth_callback=authenticate_user, user_callback=get_user)
     return decorator_wrapper(func)
 
+    
+
 def JsonResponse(body=None, message=None, error=False):
     if body is None and message is None and error == False:
         raise Exception('JsonResponse() requires at least one argument')
@@ -64,7 +67,7 @@ class InvalidSchemaError(Exception):
     pass
 
 VALID_ID_CHARS = set([l for l in 'abcdef0123456789'])
-def validate_schema(jsonobj):
+def validate_status_schema(jsonobj):
     # it should be a flat list of
     # dictionaries, no nesting. each dict
     # should have keys 'status' (1 or 0),
@@ -111,6 +114,49 @@ def validate_schema(jsonobj):
             raise
 
     return earliest
+
+def validate_subscriptions_schema(jsonobj):
+    # subscriptions accepts a tree of objects represented
+    # as JSON. each object must have id (32 chars [a-f0-9]),
+    # and may have any number of other elements; a "children"
+    # element, which is an array of other items. other
+    # elements must not be more than 1-deep (ie they are
+    # values or arrays of values or maps no more than 1 deep)
+
+    if not type(jsonobj) in (types.TupleType, types.ListType):
+        raise InvalidSchemaError('subscriptions top-level should be an array')
+
+    def validate_depth(item, max_depth=1):
+        if type(item) in (types.ListType, types.TupleType):
+            for element in item:
+                validate_depth(element, max_depth=max_depth-1)
+        elif type(item) == types.DictType:
+            for element in item.itervalues():
+                validate_depth(element, max_depth=max_depth-1)
+        elif max_depth < 0:
+            raise InvalidSchemaError('item was too deeply nested')
+
+    def validate_item(item):
+        if not 'id' in item:
+            raise InvalidSchemaError("expected key 'id' (not found)")
+        if type(item['id']) not in types.StringTypes:
+            raise InvalidSchemaError("value for key 'id' must be a string")
+        if len(item['id']) != 32:
+            raise InvalidSchemaError("value for key 'id' must 32 characters long")
+        if len(set([l for l in item['id']]) - VALID_ID_CHARS) != 0:
+            raise InvalidSchemaError("value for key 'id' must contain only the characters [0-9a-f]")
+
+        for key, value in item.iteritems():
+            if key == 'children':
+                continue
+            validate_depth(value)
+
+        for child in item.get('children', []):
+            validate_item(child)
+
+    for item in jsonobj:
+        validate_item(item)
+
 
 def log_request_time(view_func, logfunc=logging.info):
     def inner(request, *args, **kwargs):
@@ -176,12 +222,12 @@ def status(request, since):
         try:
             items = simplejson.loads(request.raw_post_data)
         except:
-            return JsonResponse('Could not parse JSON in PUT body', error=True)
+            return JsonResponse('Could not parse JSON in %s body' % request.method, error=True)
 
         try:
-            earliest = validate_schema(items)
+            earliest = validate_status_schema(items)
         except InvalidSchemaError, e:
-            return JsonResponse('Invalid format for PUT body: %s' % e.message, error=True)
+            return JsonResponse('Invalid format for %s body: %s' % (request.method, e.message), error=True)
 
         journals = user.journals(since=earliest)
 
@@ -232,7 +278,107 @@ def status(request, since):
         try:
             item_ids = simplejson.loads(request.raw_post_data)
         except:
-            return JsonResponse('Could not parse JSON in PUT body', error=True)
+            return JsonResponse('Could not parse JSON in %s body' % request.method, error=True)
+
+        for i, id in enumerate(item_ids):
+            if not type(id) in types.StringTypes or len(id) != 32:
+                return JsonResponse('Invalid format for DELETE body: item %d must be 32-char string' % i, error=True)
+
+        journals = user.journals()
+
+        # first update existing items
+        items_updated = 0
+        for journal in journals:
+            for id in item_ids:
+                try:
+                    del journal[id]
+                except KeyError:
+                    pass
+
+        for journal in journals:
+            journal.put()
+
+        logging.info("deleted %d", len(item_ids))
+
+    return JsonResponse('OK')
+
+@allow_method('GET', 'PUT', 'POST', 'DELETE')
+@require_auth
+@log_request_time
+def subscriptions(request):
+    user = request.user
+
+    if request.method in ('GET'):
+        subscriptions = user.subscriptions()
+        subscriptions = [s.as_dict() for s in subscriptions]
+        logging.info('')
+        logging.info('')
+        logging.info('')
+        for s in subscriptions:
+            logging.info(s)
+        logging.info('')
+        logging.info('')
+        logging.info('')
+        out = as_tree(as_map(subscriptions), remove_keys=['seq', 'parent_id'])
+        
+        return JsonResponse(out)
+
+    elif request.method in ('PUT', 'POST'):
+        # put a new status item or group of stauts items,
+        # and return a confirmation for each along with its
+        # modified date
+        try:
+            items = simplejson.loads(request.raw_post_data)
+        except:
+            return JsonResponse('Could not parse JSON in %s body' % request.method, error=True)
+
+        try:
+            validate_subscriptions_schema(items)
+        except InvalidSchemaError, e:
+            return JsonResponse('Invalid format for %s body: %s' % (request.method, e.message), error=True)
+
+        items = from_tree(items)
+        logging.info('')
+        logging.info('')
+        logging.info('')
+        for i, item in enumerate(items):
+            logging.info(item)
+        logging.info('')
+        logging.info('')
+        logging.info('')
+
+        subscriptions = user.subscriptions()
+        subscriptions = as_map(subscriptions)
+
+        for item in items:
+            id = item['id']
+            if id in subscriptions:
+                # update
+                pass
+            else:
+                s = Subscription()
+                s.user = user
+                s.id = id
+                s.parent_id = item.get('parent_id', '')
+                s.seq = item['seq']
+                data = {}
+                for key, value in item.iteritems():
+                    if key not in ('seq', 'id', 'parent_id'):
+                        data[key] = value
+                s.data = data
+                s.put()
+                subscriptions[id] = s
+
+
+        return JsonResponse('OK')
+
+
+    elif request.method == 'DELETE':
+        # delete accepts a list of item IDs
+        try:
+            item_ids = simplejson.loads(request.raw_post_data)
+        except:
+            return JsonResponse('Could not parse JSON in %s body' % request.method, error=True)
 
         for i, id in enumerate(item_ids):
             if not type(id) in types.StringTypes or len(id) != 32:

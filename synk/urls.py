@@ -9,5 +9,7 @@ urlpatterns = patterns('synk.views',
 
     # API URLs
     (r'^status$', 'status', {'since': '0'}),
-    (r'^status/since/(?P<since>[\d\.]+)$', 'status'),
+    #(r'^status/since/(?P<since>[\d\.]+)$', 'status'),
+
+    (r'^subscriptions$', 'subscriptions'),
 )

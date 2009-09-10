@@ -8,7 +8,7 @@ from django.conf import settings
 
 from google.appengine.ext import db
 
-__all__ = ['User', 'Journal', 'FullJournalError']
+__all__ = ['User', 'Journal', 'FullJournalError', 'Subscription']
 
 def serialize(obj):
     start = time.time()
@@ -43,6 +43,10 @@ class User(db.Model):
             # always try to get at least 1
             journals = list(db.GqlQuery('select * from Journal where user = :1 order by latest desc limit 1', self))
         return journals
+
+    def subscriptions(self):
+        subscriptions = db.GqlQuery('select * from Subscription where user = :1 order by parent_id, seq', self)
+        return subscriptions
 
     @staticmethod
     def by_username(username):
@@ -144,3 +148,38 @@ class Journal(db.Model):
     def iteritems(self):
         return self.status_map.iteritems()
 
+class Subscription(db.Model):
+    user = db.ReferenceProperty(User)
+
+    # 32-character hash (i.e. MD5)
+    id = db.StringProperty()
+
+    # 32-character hash of the parent, or empty
+    # string if the subscription has no parent
+    parent_id = db.StringProperty()
+
+    # the order relative to other subscriptions
+    seq = db.IntegerProperty()
+
+    # opaque blob (JSON or similar) of client data
+    data_serialized = db.TextProperty()
+    data = None
+
+    def __init__(self, *args, **kwargs):
+        db.Model.__init__(self, *args, **kwargs)
+
+        if self.data_serialized:
+            self.data = deserialize(self.data_serialized)
+        else:
+            self.data = {}
+
+    def put(self):
+        self.data_serialized = serialize(self.data)
+        db.Model.put(self)
+
+    def as_dict(self):
+        out = dict(self.data)
+        out['id'] = self.id
+        out['parent_id'] = self.parent_id
+        out['seq'] = self.seq
+        return out
