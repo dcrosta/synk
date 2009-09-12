@@ -47,7 +47,7 @@ which is the UNIX timestamp (seconds since Jan 1, 1970 12:00am UTC) of the
 time the event was generated on the client.
 
 Each item may contain any other key/value pairs, except keys "service" or
-"type". The length of each item must not exceed approximately 1024 bytes,
+"type". The length of each item must not exceed approximately 2048 bytes,
 including the length of key names and values.
 
 The length is computed as the string length of a Python pickle serialization
@@ -56,8 +56,18 @@ key, as:
 
     # data is the dict representing one item in the POST body
     del data['timestamp']
-    if len(pickle.dumps(data)) > 1024:
-        raise Exception('item exceeds 1024 bytes of data')
+    if len(pickle.dumps(data)) > 2048:
+        raise Exception('item exceeds 2048 bytes of data')
+
+If any element in the POST body does not validate, the entire POST body is
+rejected, and an error response is returned (with status code 500), with a
+message in the following format:
+
+  {"error": true, "message": "Invalid JSON Schema", "detail": "..."}
+
+The detail field will indicate which item had an error, and the nature of
+the error; or, if the JSON could not be parsed, it will contain an error
+message from the simplejson module.
 
 = License =
 

@@ -53,7 +53,7 @@ def validate_put_post(raw_body):
     # each object may contain any number of other fields,
     # nested as deeply as desired, so long as the total
     # length of JSON of remaining objects is no greater
-    # than 1k bytes
+    # than 2k bytes
 
     def stringify(thing):
         if type(thing) == types.DictType:
@@ -93,8 +93,8 @@ def validate_put_post(raw_body):
         
         data = dict(item)
         del data['timestamp']
-        if len(serialize(data)) > 1024:
-            raise Exception('item %d exceeds 1024 bytes of data' % i)
+        if len(serialize(data)) > 2048:
+            raise Exception('item %d exceeds 2048 bytes of data' % i)
 
     return items
 

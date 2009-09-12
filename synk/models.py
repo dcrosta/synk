@@ -97,7 +97,10 @@ class Journal(db.Model):
     events = None
     
     # maximum number of elements per Journal
-    max_size = 2000 
+    #
+    # max size per item is about 2048 bytes, but we expect
+    # many items to be much shorter than that (hopefully!)
+    max_size = 1000 
 
     size = db.IntegerProperty()
     count = db.IntegerProperty()
