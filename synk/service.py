@@ -36,7 +36,7 @@ def JsonResponse(body=None, error=False, **kwargs):
     elif body is None:
         body = ''
 
-    out = simplejson.dumps(body)
+    out = simplejson.dumps(body, separators=(',',':'))
 
     if error:
         return HttpResponseServerError(out, 'text/json')
