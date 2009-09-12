@@ -1,50 +1,67 @@
-Synk is a really simple synchronization service targeting the Google App
-Engine Python platform. It is nothing more than a bag of (id, read/unread,
-last_changed_date) tuples. Clients interact with Synk via an HTTP(S)
-interface using HTTP Digest Authentication, using JSON as a wire format.
+Synk is an application event synchronization service. Client applications
+POST events to Synk, and can later GET them in return. Synk is not intended
+for applications to synchronize large amounts of data; it is better suited
+to managing small bits of data which can be used to keep two clients in
+sync with one another.
+
+For example, the Vienna RSS reader project uses Synk to synchronize the
+following events among multiple computers:
+
+* each time an article is marked as read or unread
+* each time an article is marked with a flag
+* each time the user opens a new browser tab or clicks a link in the browser
+
+Synk uses JSON for all communication.
 
 = The API =
 
-There is only one service endpoint: /status
+GET /events/{service}
+GET /events/{service}/{type}
+GET /events/{service}/since/{timestamp}
+GET /events/{service}/{type}/since/{timestamp}
 
-GET /status
-  - returns a JSON list of objects with the following keys: 'id', 'status',
-    'last_changed'
+Return a list of events matching the filters, as JSON. {service} is a short
+string identifying a Synk service (e.g. "rss"). {type} is a short string
+identifying a sub-type within the scope of a service. The returned lists can
+be filtered to include only events logged since {timestamp}.
 
-PUT /status
-POST /status
-  - update the data store for certain items (or all items). PUT or POST body
-    should contain a JSON list of objects with the following keys: 'id',
-    'status', 'last_changed'
+Each item in the output will contain at least the following fields:
 
-DELETE /status
-  - remove certain items from the data store. DELETE body should contain a
-    JSON list of the item IDs which are to be removed
+* "timestamp", an integer (see below)
+* "service", the name of the service the event belongs to
+* "type", the name of the type the event belongs to
 
 
-= The Format =
+POST /events/{service}/{type}
 
-GET, PUT, and POST requests will deal with (lists of) JSON objects of the
-following format:
+Add events to Synk. POST body must conform to this JSON "shcema":
 
-  {"id": "9180b4da3f0c7e80975fad685f7f134e",
-   "status": 1,
-   "last_changed": 1249853837}
+[
+  {"timestamp": timestamp, ...},
+  ...
+]
 
-JSON objects with other keys will be rejected or ignored.
+The POST body must contain a JSON string describing an array, and each array
+element must be an object. Each object must contain a "timestamp" field,
+which is the UNIX timestamp (seconds since Jan 1, 1970 12:00am UTC) of the
+time the event was generated on the client.
 
-- "id" must be 32 characters, and must contain only the digits 0 through 9
-  and the letters "a" through "f". Client apps should use the lowercase MD5
-  hexadecimal digest of a unique identifier to generate Synk ids. invalid
-  values will cause the item to be rejected or ignored.
-- "status" is the integer 1 (read) or 0 (unread). other values will cause
-  the item to be rejected or ignored.
-- "last_changed" is the UNIX timestamp (in UTC) of the last time the item's
-  status was changed. This value is preserved in the data store as-is from
-  the most recent PUT or POST request from a client.
+Each item may contain any other key/value pairs, except keys "service" or
+"type". The length of each item must not exceed approximately 1024 bytes,
+including the length of key names and values.
+
+The length is computed as the string length of a Python pickle serialization
+of a Python dictionary containing all the item's data except the 'timestamp'
+key, as:
+
+    # data is the dict representing one item in the POST body
+    del data['timestamp']
+    if len(pickle.dumps(data)) > 1024:
+        raise Exception('item exceeds 1024 bytes of data')
 
 = License =
 
-Synk is distributed under a BSD-like license. Source code for Synk is
-available on GitHub at http://github.com/dcrosta/synk/tree/master.
+Synk is distributed under a BSD-like license (see LICENSE in the source code
+root directory). Source code for Synk is available on GitHub at
+http://github.com/dcrosta/synk/tree/master.
 
