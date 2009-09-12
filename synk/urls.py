@@ -7,6 +7,10 @@ urlpatterns = patterns('synk',
     (r'^dev$', 'web.dev'),
 
     # API URLs
-    (r'^status$', 'service.status', {'since': '0'}),
-    (r'^status/since/(?P<since>[\d\.]+)$', 'service.status'),
+    (r'^events/(?P<service>[^/]+)$', 'service.events', {'type': None, 'since': 0}),
+    (r'^events/(?P<service>[^/]+)/since/(?P<since>[^/]+)$', 'service.events', {'type': None}),
+
+    (r'^events/(?P<service>[^/]+)/(?P<type>[^/]+)$', 'service.events', {'since': 0}),
+    (r'^events/(?P<service>[^/]+)/(?P<type>[^/]+)/since/(?P<since>[^/]+)$', 'service.events'),
 )
+

@@ -2,7 +2,6 @@
 
 DEBUG = False
 TEMPLATE_DEBUG = DEBUG
-PROFILING = False
 
 ADMINS = (
     # ('Your Name', 'your_email@domain.com'),

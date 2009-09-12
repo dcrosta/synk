@@ -1,6 +1,6 @@
+import types
 import md5
-import simplejson
-import sys
+import pickle
 import logging
 import time
 
@@ -8,20 +8,18 @@ from django.conf import settings
 
 from google.appengine.ext import db
 
-__all__ = ['User', 'Journal', 'FullJournalError']
+__all__ = ['User', 'Journal', 'JournalError', 'serialize', 'deserialize']
 
 def serialize(obj):
     start = time.time()
-    out = simplejson.dumps(obj, separators=[',', ':'])
-    if settings.PROFILING:
-        logging.debug('serializing time: %f', time.time() - start)
+    out = pickle.dumps(obj)
+    logging.debug('serializing time: %f', time.time() - start)
     return out
 
 def deserialize(obj):
     start = time.time()
-    out = simplejson.loads(obj)
-    if settings.PROFILING:
-        logging.debug('deserializing time: %f', time.time() - start)
+    out = pickle.loads(obj)
+    logging.debug('deserializing time: %f', time.time() - start)
     return out
 
 class User(db.Model):
@@ -37,11 +35,32 @@ class User(db.Model):
         ha1 = md5.new(a1)
         self.password_hash = ha1.hexdigest()
 
-    def journals(self, since=0):
-        journals = list(db.GqlQuery('select * from Journal where user = :1 and latest >= :2 order by latest desc', self, since))
-        if len(journals) == 0:
-            # always try to get at least 1
-            journals = list(db.GqlQuery('select * from Journal where user = :1 order by latest desc limit 1', self))
+    def journals(self, service=None, type=None, last_timestamp=None, limit=''):
+        # get journals, optionally filtering by service, type,
+        # or last_timestamp (using >= for last_timestamp)
+        args = [self]
+        predicate = []
+        i = 2 # start at 2, since :1 will always be user
+
+        values = locals()
+        for filter in ('service', 'type', 'last_timestamp'):
+            value = values[filter]
+            if value is not None:
+                args.append(value)
+                if filter == 'last_timestamp':
+                    predicate.append('%s >= :%d' % (filter, i))
+                else:
+                    predicate.append('%s = :%d' % (filter, i))
+                i += 1
+
+        if predicate:
+            predicate = ' and ' + ' and '.join(predicate)
+        
+        if limit is not '':
+            limit = ' limit %d' % limit
+
+        query = 'select * from Journal where user = :1 %s order by last_timestamp desc %s' % (predicate, limit)
+        journals = db.GqlQuery(query, *args)
         return journals
 
     @staticmethod
@@ -52,95 +71,101 @@ class User(db.Model):
         except IndexError:
             return None
 
-class FullJournalError(Exception):
+class JournalError(Exception):
     """Raised when the status is at its max_size already"""
     pass
 
 class Journal(db.Model):
     user = db.ReferenceProperty(User)
 
-    # the greatest and least last_changed of any item
-    # in this Journal
-    latest = db.IntegerProperty(default=0)
-    earliest = db.IntegerProperty(default=sys.maxint)
+    # e.g. "rss"
+    service = db.StringProperty()
+
+    # e.g. "article" or "browser"
+    type = db.StringProperty()
+    
+    # timestamp of the latest event in the Journal
+    #
+    # note that due to an optimization in __delitem__,
+    # this value is always >= the last timestamp, but
+    # is never less than the last timestamp
+    last_timestamp = db.IntegerProperty()
 
     # serialized python dictionary mapping item id
     # to status key
-    status_map_serialized = db.TextProperty(default='{}')
-    status_map = None
+    events_serialized = db.BlobProperty(default=None)
+    events = None
     
-    # max_size is based on max_len of 900000 bytes
-    # with a constant per-entry size of 79 bytes
-    # (this is true when serializing as JSON)
-    max_size = 11000
-    max_len = 900000
+    # maximum number of elements per Journal
+    max_size = 2000 
+
+    size = db.IntegerProperty()
+    count = db.IntegerProperty()
     fill_factor = db.FloatProperty()
 
     def __init__(self, *args, **kwargs):
         db.Model.__init__(self, *args, **kwargs)
 
-        if self.status_map_serialized:
-            self.status_map = deserialize(self.status_map_serialized)
-            logging.debug("%d items, %d bytes, %f fill factor", len(self.status_map), len(self.status_map_serialized), self.fill_factor)
+        if self.events_serialized:
+            self.events = deserialize(self.events_serialized)
         else:
-            self.status_map = {}
+            self.events = []
 
     def is_full(self):
-        return settings.PROFILING and len(serialize(self.status_map)) >= self.max_len \
-            or len(self.status_map) >= self.max_size
+        return len(self.events) >= self.max_size
 
     def put(self):
-        self.status_map_serialized = serialize(self.status_map)
-        self.fill_factor = float(len(self.status_map_serialized)) / float(self.max_len)
-        db.Model.put(self)
-        if settings.PROFILING:
-            logging.debug("%d items, %d bytes, %f fill factor", len(self.status_map), len(self.status_map_serialized), self.fill_factor)
+        # sort before saving
+        self.events.sort(key=lambda item: item['timestamp'])
 
-    # implement dictionary protocol
+        self.events_serialized = serialize(self.events)
+
+        self.size = len(self.events_serialized)
+        self.count = len(self.events)
+        self.fill_factor = float(self.size) / 900000.0
+
+        db.Model.put(self)
+
+    def _check_value_for_add(self, value):
+        # check some costraints, and update
+        # the last_timestamp property before
+        # inserting/updating/appending
+        if type(value) != types.DictType:
+            # don't expect this to happen ever, really
+            raise JournalError('journal elements must be dictionaries')
+
+        if self.is_full():
+            raise JournalError('journal is already full')
+
+        if 'timestamp' in value and value['timestamp'] > self.last_timestamp:
+            self.last_timestamp = value['timestamp']
+
+
+    # implement sequence protocol
     def __len__(self):
-        return len(self.status_map)
+        return len(self.events)
 
     def __contains__(self, element):
-        return (element in self.status_map)
+        return (element in self.events)
 
     def __getitem__(self, key):
-        return self.status_map[key]
+        return self.events[key]
 
     def __setitem__(self, key, value):
-        if self.is_full():
-            if settings.PROFILING:
-                logging.warn('FullJournalException with %d items' % len(self.status_map))
-            raise FullJournalException()
+        self._check_value_for_add(value)
+        self.events[key] = value
 
-        last_changed = value['last_changed'] 
-        if last_changed > self.latest:
-            self.latest = last_changed
-        if last_changed < self.earliest:
-            self.earliest = last_changed
+    def insert(self, index, value):
+        self._check_value_for_add(value)
+        self.events.insert(index, value)
 
-        self.status_map[key] = value
+    def append(self, value):
+        self._check_value_for_add(value)
+        self.events.append(value)
 
     def __delitem__(self, key):
-        del self.status_map[key]
+        del self.events[key]
 
     def __iter__(self):
-        return iter(self.status_map)
-
-    def keys(self):
-        return self.status_map.keys()
-
-    def iterkeys(self):
-        return self.status_map.iterkeys()
-
-    def values(self):
-        return self.status_map.values()
-
-    def itervalues(self):
-        return self.status_map.itervalues()
-
-    def items(self):
-        return self.status_map.items()
-
-    def iteritems(self):
-        return self.status_map.iteritems()
+        return iter(self.events)
 
