@@ -15,6 +15,14 @@ Synk uses JSON for all communication.
 
 = The API =
 
+Synk accepts GET and POST requests. It does not respond to DELETE, PUT, or
+other HTTP methods.
+
+Synk API requests must be authenticated using HTTP Digest Authentication.
+Clients should store user passwords securely (e.g. in OS X's Keychain) or
+should prompt the user for password before each request and not save the
+password between requests.
+
 GET /events/{service}
 GET /events/{service}/{type}
 GET /events/{service}/since/{timestamp}
