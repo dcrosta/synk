@@ -227,7 +227,7 @@ dd.error{
 /* other */
 
 p{
-  margin: .6em 0 .3em;
+  margin: 1em 0px;
   line-height: 150%;
   font-size: 1.125em;
 }
@@ -1533,3 +1533,8 @@ img.wp-smiley, .post .postbody img.wp-smiley, .attachment img.wp-smiley{
 #header{ background: transparent url(/static/images/header-center.jpg) no-repeat center top; }
 #header-wrap{ background: transparent url(/static/images/header-bg.jpg) repeat-x center top; }
 
+
+code {
+    font-family: "Andale Mono", "Monaco", monospace;
+    font-size:larger;
+}
