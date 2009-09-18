@@ -1,27 +1,83 @@
 {% extends "base.html" %}
 
-{% block title %}Register - Synk{% endblock %}
+{% block title %}Development - Synk{% endblock %}
 
 {% block body %}
-                      <div class="post-header">
-                        <h3 class="post-title">Use Synk In Your App</h3>
-                      </div>
-
-                      <div class="post-content clearfix">
-                        <p>
-                        Synk implemens a very simple HTTP/JSON API. More details coming soon.
-                        </p>
-                      </div>
-
                       <div class="post-header">
                         <h3 class="post-title">Help Develop Synk</h3>
                       </div>
 
                       <div class="post-content clearfix">
                         <p>
-                        Synk development is hosted at <a href="http://www.github.com/">GitHub</a>,
-                        where you can browse, clone, or fork the 
-                        <a href="http://github.com/dcrosta/synk/tree/master">Synk repository</a>.
+                        Synk source code is hosted at
+                        <a href="http://github.com/dcrosta/synk">GitHub</a>, where you can browse,
+                        clone, or fork the repository.
+                        </p>
+
+                        <p>
+                        Synk is open source, licensed with a permissive BSD-like license.
+                        Nevertheless, you are encouraged to submit a patch for any improvements or
+                        bug fixes you make, so that everyone can benefit.
+                        </p>
+                      </div>
+
+                      <div class="post-header">
+                        <h3 class="post-title">Use Synk In Your App</h3>
+                      </div>
+
+                      <div class="post-content clearfix">
+                        <p>
+                        Synk implemens a very simple HTTP/JSON API. Full documentation is available
+                        in the <a href="http://github.com/dcrosta/synk/tree/master/README">README</a>
+                        file.
+                        </p>
+
+                        <p>
+                        Your application must be able to send HTTP <code>GET</code> and
+                        <code>POST</code> requests with HTTP digest authentication, and must be able
+                        to generate and parse <a href="http://json.org/">JSON</a> structures. Synk
+                        does not have an XML API.
+                        </p>
+
+                        <p>
+                        Synk deals in "events" &#8212; small data structures that describe an action
+                        taken by a user (or perhaps automatically on the user's behalf) in an
+                        application. Synk events are categorized by service (e.g. "rss" or
+                        "webbrowser"), and type (e.g. "article" or "tab"). All synk events have a
+                        single mandatory field, "timestamp", which is the number of seconds since
+                        midnight, January 1, 1970 in the UTC time zone, commonly referred to as the
+                        "UNIX timestamp."
+                        </p>
+
+                        <p>
+                        Synk provides the following API endpoints:
+                        </p>
+
+                        <ul>
+                          <li><code>GET /events/{service}</code></li>
+                          <li><code>GET /events/{service}/since/{timestamp}</code></li>
+                          <li><code>GET /events/{service}/{type}</code></li>
+                          <li><code>GET /events/{service}/{type}/since/{timestamp}</code></li>
+                          <li><code>POST /events/{service}/{type}</code></li>
+                        </ul>
+
+                        <p>
+                        The <code>GET</code> endpoints return a JSON array of objects, one per synk
+                        event that matches the given filters. You may make GET requests with the
+                        type filter set to "all", and this acts exactly as though the type filter
+                        were not present.
+                        </p>
+
+                        <p>
+                        The <code>POST</code> endpoint requires a service and type, and all events
+                        posted will be stored with the service and type specified in the URL. It
+                        accepts a JSON array of objects as input, and validates that each object has
+                        a "timestamp" field, and does <em>not</em> have a "service" or "type" field.
+                        If this validation fails for any element in the POST body, the entire body
+                        is rejected, and an error message is returned (along with HTTP status code
+                        500). On success, a status code of 200 is returned with an empty body.
+                        The timestamp is not modified by Synk, so it is important that users keep
+                        their clocks set correctly, and that timestamps are always in UTC.
                         </p>
                       </div>
 {% endblock %}
