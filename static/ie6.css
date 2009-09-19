@@ -23,8 +23,8 @@ body{ text-align: center; }  /* center main div in IE 5.5 */
 }
 
 #nav-wrap2 ul#nav .fadeThis span.hover { background: #5798c2; }
-#nav-wrap1{ background: transparent url(images/nav-left-ie6.png) no-repeat left top; }
-#nav-wrap2{ background: transparent url(images/nav-bg-ie6.png) no-repeat right top; }
+#nav-wrap1{ background: transparent url(/static/images/nav-left-ie6.png) no-repeat left top; }
+#nav-wrap2{ background: transparent url(/static/images/nav-bg-ie6.png) no-repeat right top; }
 #nav-wrap2 ul#nav{ float:left; }
 
 #nav-wrap2 ul#nav li a{
@@ -41,10 +41,10 @@ body{ text-align: center; }  /* center main div in IE 5.5 */
 }
 
 /* search */
-.search-block{ background: transparent url(images/search-bg-ie6.png) no-repeat left top; }
+.search-block{ background: transparent url(/static/images/search-bg-ie6.png) no-repeat left top; }
 
 .search-block .searchform-wrap{
-  background: transparent url(images/search-go-ie6.png) no-repeat right top; }
+  background: transparent url(/static/images/search-go-ie6.png) no-repeat right top; }
 
 ul.menu .fadeThis {
   position: static;
@@ -55,7 +55,7 @@ ul.menu .fadeThis span.hover {
 }
 
 ul.menu li a:hover{
-  background: #f7f5ef url(images/side-menu-active.png) repeat-x left bottom;
+  background: #f7f5ef url(/static/images/side-menu-active.png) repeat-x left bottom;
 }
 
 .comment-wrap2{
