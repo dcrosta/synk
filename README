@@ -77,9 +77,17 @@ The detail field will indicate which item had an error, and the nature of
 the error; or, if the JSON could not be parsed, it will contain an error
 message from the simplejson module.
 
+
+GET /account/test
+
+Return an empty response with a 200 status code if the authentication
+challenge was successful, or a 401 status code if the authentication
+challenge was unsuccessful. This is intended to be used by clients to
+allow end users to verify that their credentials are accepted by Synk.
+
 = License =
 
-Synk is distributed under a BSD-like license (see LICENSE in the source code
-root directory). Source code for Synk is available on GitHub at
+Synk is distributed under a BSD-like license (see LICENSE in the source
+code root directory). Source code for Synk is available on GitHub at
 http://github.com/dcrosta/synk/tree/master.
 

@@ -166,3 +166,7 @@ def events(request, service, type, since):
 
     return JsonResponse(message='Could not process request', error=True)
 
+@require_auth
+def account_test(request):
+    return HttpResponse('')
+
